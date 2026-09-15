@@ -2,17 +2,25 @@
 
 ///////////////////////////////////////////////////////////////////////////////
 //
-// \file       crc64_riscv_zbc.h
-// \brief      CRC64 calculation using RISC-V Zbc carry-less multiplication
+/// \file       crc64_riscv_zbc.h
+/// \brief      CRC64 calculation using RISC-V Zbc carry-less multiplication
 //
 ///////////////////////////////////////////////////////////////////////////////
 
 #ifndef LZMA_CRC64_RISCV_ZBC_H
 #define LZMA_CRC64_RISCV_ZBC_H
 
-#if !(defined(__riscv) && defined(__riscv_xlen) \
-		&& __riscv_xlen == 64 && defined(__riscv_zbc))
-#	error crc64_riscv_zbc.h requires RV64 with the Zbc extension enabled
+#if !(defined(__riscv) && defined(__riscv_xlen) && __riscv_xlen == 64)
+#	error crc64_riscv_zbc.h requires RV64
+#endif
+
+// If both implementations are built, runtime detection uses Linux
+// riscv_hwprobe. crc_common.h only enables this combination when
+// HAVE_RISCV_HWPROBE is available.
+#if defined(CRC64_GENERIC) && defined(CRC64_ARCH_OPTIMIZED)
+#	include <asm/hwprobe.h>
+#	include <sys/syscall.h>
+#	include <unistd.h>
 #endif
 
 
@@ -107,18 +115,23 @@ crc64_zbc_keep_high_bytes(crc64_zbc_u128 v, size_t count)
 
 
 // Full 64 x 64 -> 128 carry-less multiplication.
+//
+// .option arch,+zbc enables Zbc only for these instructions. Unlike a
+// function target attribute, this doesn't raise the ELF minimum ISA
+// requirement when the rest of the translation unit is built for rv64gc.
 static inline crc64_zbc_u128
 crc64_zbc_clmul64(uint64_t a, uint64_t b)
 {
 	crc64_zbc_u128 r;
 
-	__asm__("clmul %0, %1, %2"
-			: "=r"(r.lo)
-			: "r"(a), "r"(b));
-
-	__asm__("clmulh %0, %1, %2"
-			: "=r"(r.hi)
-			: "r"(a), "r"(b));
+	__asm__(
+		".option push\n\t"
+		".option arch, +zbc\n\t"
+		"clmul  %0, %2, %3\n\t"
+		"clmulh %1, %2, %3\n\t"
+		".option pop"
+		: "=&r"(r.lo), "=&r"(r.hi)
+		: "r"(a), "r"(b));
 
 	return r;
 }
@@ -148,8 +161,8 @@ crc64_arch_optimized(const uint8_t *buf, size_t size, uint64_t crc)
 	if (size == 0)
 		return crc;
 
-	// These are the same constants as in crc_x86_clmul.h. The x86
-	// _mm_set_epi64x(high, low) representation maps to { low, high }.
+	// See crc_clmul_consts_gen.c.
+	// _mm_set_epi64x(high, low) maps to { low, high } here.
 	const crc64_zbc_u128 fold512 = {
 		UINT64_C(0x6ae3efbb9dd441f3),
 		UINT64_C(0x081f6054a7842df4)
@@ -194,8 +207,8 @@ crc64_arch_optimized(const uint8_t *buf, size_t size, uint64_t crc)
 	} else if (size < 16) {
 		v0 = (crc64_zbc_u128){ crc ^ read64le(buf), 0 };
 
-		// Keep buf eight bytes behind so that read64le(buf + size)
-		// can load the final 1-7 bytes without reading past the buffer.
+		// NOTE: buf is intentionally left 8 bytes behind so that
+		// we can read the last 1-7 bytes with read64le(buf + size).
 		size -= 8;
 
 		if (size > 0) {
@@ -263,7 +276,7 @@ crc64_arch_optimized(const uint8_t *buf, size_t size, uint64_t crc)
 
 		v1 = crc64_zbc_shift_right(v0, 8);
 
-		// x86 PCLMUL selector 0x10: v0.lo * fold128.hi.
+		// x86 PCLMUL selector 0x10: CLMUL(v0.lo, fold128.hi).
 		v0 = crc64_zbc_xor128(
 				crc64_zbc_clmul64(v0.lo, fold128.hi), v1);
 	}
@@ -281,6 +294,32 @@ crc64_arch_optimized(const uint8_t *buf, size_t size, uint64_t crc)
 
 	return ~v0.hi;
 }
+
+
+#if defined(CRC64_GENERIC) && defined(CRC64_ARCH_OPTIMIZED)
+static inline bool
+is_arch_extension_supported(void)
+{
+	struct riscv_hwprobe pair = {
+		.key = RISCV_HWPROBE_KEY_IMA_EXT_0,
+		.value = 0,
+	};
+
+#if defined(SYS_riscv_hwprobe)
+	const long ret = syscall(SYS_riscv_hwprobe,
+			&pair, 1, 0, NULL, 0);
+#elif defined(__NR_riscv_hwprobe)
+	const long ret = syscall(__NR_riscv_hwprobe,
+			&pair, 1, 0, NULL, 0);
+#else
+#	error RISC-V hwprobe syscall number unavailable
+#endif
+
+	return ret == 0
+			&& pair.key == RISCV_HWPROBE_KEY_IMA_EXT_0
+			&& (pair.value & RISCV_HWPROBE_EXT_ZBC) != 0;
+}
+#endif
 
 
 #endif // LZMA_CRC64_RISCV_ZBC_H

@@ -125,15 +125,24 @@ extern const uint64_t lzma_crc64_table[4][256];
 #	define CRC32_LOONGARCH 1
 #endif
 
-
-#if defined(__riscv) \
+// RISC-V
+//
+// If Zbc is enabled globally, use the optimized implementation
+// unconditionally. Otherwise use runtime detection when Linux
+// riscv_hwprobe is available.
+#if defined(HAVE_RISCV_ZBC_CRC64) \
+		&& defined(__riscv) \
 		&& defined(__riscv_xlen) \
 		&& __riscv_xlen == 64 \
-		&& defined(__riscv_zbc) \
 		&& !defined(WORDS_BIGENDIAN)
-
-#	define CRC64_ARCH_OPTIMIZED 1
-#	define CRC64_RISCV_ZBC 1
+#	if defined(__riscv_zbc)
+#		define CRC64_ARCH_OPTIMIZED 1
+#		define CRC64_RISCV_ZBC 1
+#	elif defined(HAVE_RISCV_HWPROBE)
+#		define CRC64_GENERIC 1
+#		define CRC64_ARCH_OPTIMIZED 1
+#		define CRC64_RISCV_ZBC 1
+#	endif
 #endif
 
 // x86 and E2K
@@ -187,6 +196,5 @@ extern const uint64_t lzma_crc64_table[4][256];
 #if !defined(CRC64_ARCH_OPTIMIZED) && !defined(CRC64_GENERIC)
 #	define CRC64_GENERIC 1
 #endif
-
 
 #endif

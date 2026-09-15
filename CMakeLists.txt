@@ -626,6 +626,7 @@ add_library(liblzma
     src/liblzma/check/crc_x86_clmul.h
     src/liblzma/check/crc32_arm64.h
     src/liblzma/check/crc32_loongarch.h
+    src/liblzma/check/crc64_riscv_zbc.h
     src/liblzma/common/block_util.c
     src/liblzma/common/common.c
     src/liblzma/common/common.h

@@ -126,6 +126,16 @@ extern const uint64_t lzma_crc64_table[4][256];
 #endif
 
 
+#if defined(__riscv) \
+		&& defined(__riscv_xlen) \
+		&& __riscv_xlen == 64 \
+		&& defined(__riscv_zbc) \
+		&& !defined(WORDS_BIGENDIAN)
+
+#	define CRC64_ARCH_OPTIMIZED 1
+#	define CRC64_RISCV_ZBC 1
+#endif
+
 // x86 and E2K
 #if defined(HAVE_USABLE_CLMUL)
 	// If CLMUL is allowed unconditionally in the compiler options then
@@ -177,5 +187,6 @@ extern const uint64_t lzma_crc64_table[4][256];
 #if !defined(CRC64_ARCH_OPTIMIZED) && !defined(CRC64_GENERIC)
 #	define CRC64_GENERIC 1
 #endif
+
 
 #endif

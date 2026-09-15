@@ -178,4 +178,14 @@ extern const uint64_t lzma_crc64_table[4][256];
 #	define CRC64_GENERIC 1
 #endif
 
+#if defined(__riscv) \
+		&& defined(__riscv_xlen) \
+		&& __riscv_xlen == 64 \
+		&& defined(__riscv_zbc) \
+		&& !defined(WORDS_BIGENDIAN)
+
+#	define CRC64_ARCH_OPTIMIZED 1
+#	define CRC64_RISCV_ZBC 1
+#endif
+
 #endif
